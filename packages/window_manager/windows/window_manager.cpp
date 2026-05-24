@@ -89,6 +89,12 @@ class WindowManager {
 
   bool is_resizing_ = false;
   bool is_moving_ = false;
+  RECT click_through_rect_ = {0, 0, 0, 0};
+  double click_through_x_ = 0;
+  double click_through_y_ = 0;
+  double click_through_width_ = 0;
+  double click_through_height_ = 0;
+  bool is_ignore_mouse_events_ = false;
 
   HWND GetMainWindow();
   void WindowManager::ForceRefresh();
@@ -153,6 +159,7 @@ class WindowManager {
   void WindowManager::PopUpWindowMenu(const flutter::EncodableMap& args);
   void WindowManager::StartDragging();
   void WindowManager::StartResizing(const flutter::EncodableMap& args);
+  void WindowManager::UpdateClickThroughRegion();
 
  private:
   static constexpr auto kFlutterViewWindowClassName = L"FLUTTERVIEW";
@@ -1058,14 +1065,43 @@ void WindowManager::SetBrightness(const flutter::EncodableMap& args) {
 void WindowManager::SetIgnoreMouseEvents(const flutter::EncodableMap& args) {
   bool ignore = std::get<bool>(args.at(flutter::EncodableValue("ignore")));
 
-  HWND hwnd = GetMainWindow();
-  LONG ex_style = ::GetWindowLong(hwnd, GWL_EXSTYLE);
-  if (ignore)
-    ex_style |= (WS_EX_TRANSPARENT | WS_EX_LAYERED);
-  else
-    ex_style &= ~(WS_EX_TRANSPARENT | WS_EX_LAYERED);
+  double devicePixelRatio = 1.0;
+  auto* null_or_dpr = std::get_if<double>(ValueOrNull(args, "devicePixelRatio"));
+  if (null_or_dpr) devicePixelRatio = *null_or_dpr;
 
-  ::SetWindowLong(hwnd, GWL_EXSTYLE, ex_style);
+  auto* null_or_x = std::get_if<double>(ValueOrNull(args, "x"));
+  auto* null_or_y = std::get_if<double>(ValueOrNull(args, "y"));
+  auto* null_or_width = std::get_if<double>(ValueOrNull(args, "width"));
+  auto* null_or_height = std::get_if<double>(ValueOrNull(args, "height"));
+
+  is_ignore_mouse_events_ = ignore;
+  if (null_or_x && null_or_y && null_or_width && null_or_height) {
+    click_through_x_ = *null_or_x;
+    click_through_y_ = *null_or_y;
+    click_through_width_ = *null_or_width;
+    click_through_height_ = *null_or_height;
+    pixel_ratio_ = devicePixelRatio;
+  }
+  else {
+    click_through_x_ = 0;
+    click_through_y_ = 0;
+    click_through_width_ = 0;
+    click_through_height_ = 0;
+  }
+
+  HWND hwnd = GetMainWindow();
+  if (ignore) {
+    UpdateClickThroughRegion();
+    // LONG ex_style = ::GetWindowLong(hwnd, GWL_EXSTYLE);
+    // ex_style |= WS_EX_LAYERED;
+    // ::SetWindowLong(hwnd, GWL_EXSTYLE, ex_style);
+  }
+  else {
+    SetWindowRgn(hwnd, NULL, TRUE);
+    // LONG ex_style = ::GetWindowLong(hwnd, GWL_EXSTYLE);
+    // ex_style &= ~WS_EX_LAYERED;
+    // ::SetWindowLong(hwnd, GWL_EXSTYLE, ex_style);
+  }
 }
 
 void WindowManager::PopUpWindowMenu(const flutter::EncodableMap& args) {
@@ -1124,6 +1160,33 @@ void WindowManager::StartResizing(const flutter::EncodableMap& args) {
   GetCursorPos(&cursorPos);
   PostMessage(hWnd, WM_NCLBUTTONDOWN, command,
               MAKELPARAM(cursorPos.x, cursorPos.y));
+}
+
+void WindowManager::UpdateClickThroughRegion() {
+  if (
+    !is_ignore_mouse_events_ ||
+    click_through_width_ <= 0 ||
+    click_through_height_ <= 0
+  ) return;
+
+  HWND hwnd = GetMainWindow();
+  RECT window_rect;
+  GetWindowRect(hwnd, &window_rect);
+  int width = window_rect.right - window_rect.left;
+  int height = window_rect.bottom - window_rect.top;
+
+  int x = static_cast<int>(click_through_x_ * pixel_ratio_);
+  int y = static_cast<int>(click_through_y_ * pixel_ratio_);
+  int w = static_cast<int>(click_through_width_ * pixel_ratio_);
+  int h = static_cast<int>(click_through_height_ * pixel_ratio_);
+
+  RECT rect = {x, y, x + w, y + h};
+
+  HRGN full_region = CreateRectRgn(0, 0, width, height);
+  HRGN exclude_region = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom);
+  CombineRgn(full_region, full_region, exclude_region, RGN_DIFF);
+  DeleteObject(exclude_region);
+  SetWindowRgn(hwnd, full_region, TRUE);
 }
 
 }  // namespace

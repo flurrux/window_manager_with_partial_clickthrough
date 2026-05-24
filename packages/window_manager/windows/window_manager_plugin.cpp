@@ -222,6 +222,7 @@ std::optional<LRESULT> WindowManagerPlugin::HandleWindowProc(HWND hWnd,
       _EmitEvent("moved");
       window_manager->is_moving_ = false;
     }
+    window_manager->UpdateClickThroughRegion();
     return false;
   } else if (message == WM_MOVING) {
     window_manager->is_moving_ = true;

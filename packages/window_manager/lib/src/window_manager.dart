@@ -701,10 +701,17 @@ class WindowManager {
   /// Makes the window ignore all mouse events.
   ///
   /// All mouse events happened in this window will be passed to the window below this window, but if this window has focus, it will still receive keyboard events.
-  Future<void> setIgnoreMouseEvents(bool ignore, {bool forward = false}) async {
+  /// If a rectangle is provided (x, y, width, height), only that rectangular area will be click-through, while the rest remains interactable.
+  /// The rectangle coordinates are in logical pixels relative to the window's top-left corner.
+  Future<void> setIgnoreMouseEvents(bool ignore, {bool forward = false, double? x, double? y, double? width, double? height, double? devicePixelRatio}) async {
     final Map<String, dynamic> arguments = {
       'ignore': ignore,
       'forward': forward,
+      if (x != null) 'x': x,
+      if (y != null) 'y': y,
+      if (width != null) 'width': width,
+      if (height != null) 'height': height,
+      if (devicePixelRatio != null) 'devicePixelRatio': devicePixelRatio,
     };
     await _channel.invokeMethod('setIgnoreMouseEvents', arguments);
   }
